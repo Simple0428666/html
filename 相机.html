@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>摄像头拍照并保存（带删除功能）</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Microsoft Yahei', sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            background-color: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 6px 25px rgba(0, 0, 0, 0.08);
+            padding: 35px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #212529;
+            margin-bottom: 25px;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .status {
+            font-size: 18px;
+            padding: 18px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            width: 100%;
+        }
+
+        .status.info {
+            background-color: #e9f5ff;
+            color: #0d6efd;
+        }
+
+        .status.success {
+            background-color: #e8f8f5;
+            color: #198754;
+        }
+
+        .status.error {
+            background-color: #fef7f7;
+            color: #dc3545;
+        }
+
+        .camera-wrapper {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            margin-bottom: 25px;
+        }
+
+        .video-container {
+            width: 100%;
+            max-width: 640px;
+            height: 0;
+            border-radius: 10px;
+            overflow: hidden;
+            transition: height 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .video-container.show {
+            height: 480px;
+            border-color: #dee2e6;
+        }
+
+        #camera-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .preview-container {
+            width: 100%;
+            max-width: 200px;
+            height: 0;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid #dee2e6;
+            transition: height 0.3s ease;
+        }
+
+        .preview-container.show {
+            height: 150px;
+        }
+
+        #preview-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 25px;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background-color: #0d6efd;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background-color: #0b5ed7;
+        }
+
+        .btn-success {
+            background-color: #198754;
+            color: #fff;
+        }
+
+        .btn-success:hover {
+            background-color: #157347;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            background-color: #bb2d3b;
+        }
+
+        .btn:disabled {
+            background-color: #adb5bd;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .note {
+            font-size: 14px;
+            color: #6c757d;
+            line-height: 1.8;
+            text-align: left;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        /* 隐藏canvas（仅用于截图） */
+        #capture-canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>摄像头拍照与保存（带删除功能）</h1>
+        
+        <div id="status" class="status info">
+            点击下方按钮请求摄像头权限，之后可拍照并保存
+        </div>
+
+        <div class="camera-wrapper">
+            <!-- 摄像头预览 -->
+            <div class="video-container" id="video-container">
+                <video id="camera-video" autoplay playsinline muted></video>
+            </div>
+
+            <!-- 拍照预览 -->
+            <div class="preview-container" id="preview-container">
+                <img id="preview-img" alt="拍照预览">
+            </div>
+        </div>
+
+        <!-- 功能按钮组（新增删除按钮） -->
+        <div class="btn-group">
+            <button id="request-camera" class="btn btn-primary">请求摄像头权限</button>
+            <button id="take-photo" class="btn btn-success" disabled>拍照</button>
+            <button id="save-photo" class="btn btn-primary" disabled>保存照片到本地</button>
+            <button id="delete-photo" class="btn btn-danger" disabled>删除当前照片</button>
+        </div>
+
+        <!-- 隐藏的canvas，用于截取视频帧 -->
+        <canvas id="capture-canvas"></canvas>
+
+        <!-- 注意事项 -->
+        <div class="note">
+            注意事项：<br>
+            1. 本地测试可直接打开（localhost环境），线上部署需使用HTTPS协议<br>
+            2. 点击“保存照片”后会触发浏览器下载，可在下载对话框中选择“桌面”作为保存位置<br>
+            3. 若拒绝摄像头权限，可点击浏览器地址栏左侧的权限图标重新开启<br>
+            4. 照片格式为PNG，文件名为“camera_photo_+时间戳”，避免重复覆盖<br>
+            5. 点击“删除当前照片”可清除预览图，重置保存功能状态
+        </div>
+    </div>
+
+    <script>
+        // 获取所有DOM元素（新增删除按钮DOM）
+        const statusEl = document.getElementById('status');
+        const videoContainer = document.getElementById('video-container');
+        const videoEl = document.getElementById('camera-video');
+        const previewContainer = document.getElementById('preview-container');
+        const previewImg = document.getElementById('preview-img');
+        const captureCanvas = document.getElementById('capture-canvas');
+        const ctx = captureCanvas.getContext('2d'); // 获取canvas绘图上下文
+
+        const requestCameraBtn = document.getElementById('request-camera');
+        const takePhotoBtn = document.getElementById('take-photo');
+        const savePhotoBtn = document.getElementById('save-photo');
+        const deletePhotoBtn = document.getElementById('delete-photo'); // 新增删除按钮
+
+        let mediaStream = null; // 存储摄像头媒体流
+        let photoDataUrl = null; // 存储拍照后的图片数据
+
+        // 检查浏览器是否支持媒体设备API
+        const isMediaSupported = !!navigator.mediaDevices?.getUserMedia;
+        if (!isMediaSupported) {
+            updateStatus('当前浏览器不支持摄像头访问功能，请更换现代浏览器（Chrome/Edge/Firefox）', 'error');
+            requestCameraBtn.disabled = true;
+        }
+
+        /**
+         * 更新状态提示
+         * @param {string} msg 提示信息
+         * @param {string} type 类型：info/success/error
+         */
+        function updateStatus(msg, type = 'info') {
+            statusEl.textContent = msg;
+            statusEl.className = `status ${type}`;
+        }
+
+        /**
+         * 请求摄像头权限并开启预览
+         */
+        async function requestCameraPermission() {
+            try {
+                requestCameraBtn.disabled = true;
+                updateStatus('正在请求摄像头权限，请在弹窗中允许...', 'info');
+
+                // 请求摄像头权限（仅视频，不请求音频）
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'user' // 优先前置摄像头，切换为'environment'可优先后置（移动端）
+                    },
+                    audio: false
+                });
+
+                // 开启视频预览
+                videoContainer.classList.add('show');
+                videoEl.srcObject = mediaStream;
+
+                // 同步canvas尺寸与视频尺寸
+                videoEl.addEventListener('loadedmetadata', () => {
+                    captureCanvas.width = videoEl.videoWidth;
+                    captureCanvas.height = videoEl.videoHeight;
+                });
+
+                updateStatus('摄像头权限获取成功，可点击“拍照”按钮拍摄照片', 'success');
+                takePhotoBtn.disabled = false; // 启用拍照按钮
+
+            } catch (err) {
+                // 处理不同类型的错误
+                let errMsg = '';
+                switch (err.name) {
+                    case 'PermissionDeniedError':
+                    case 'NotAllowedError':
+                        errMsg = '您拒绝了摄像头权限，无法使用拍照功能，可在地址栏左侧权限图标中重新开启';
+                        break;
+                    case 'NotFoundError':
+                        errMsg = '未检测到可用的摄像头设备，请检查设备是否连接';
+                        break;
+                    case 'NotSupportedError':
+                        errMsg = '当前环境不支持摄像头访问，线上网站需使用HTTPS协议';
+                        break;
+                    default:
+                        errMsg = `摄像头请求失败：${err.message}`;
+                }
+                updateStatus(errMsg, 'error');
+                requestCameraBtn.disabled = false; // 重新启用请求按钮
+            }
+        }
+
+        /**
+         * 拍照功能：截取视频当前帧
+         */
+        function takePhoto() {
+            if (!mediaStream) {
+                updateStatus('请先获取摄像头权限', 'error');
+                return;
+            }
+
+            try {
+                // 在canvas上绘制当前视频帧
+                ctx.drawImage(videoEl, 0, 0, captureCanvas.width, captureCanvas.height);
+                // 将canvas转为图片数据URL（PNG格式）
+                photoDataUrl = captureCanvas.toDataURL('image/png');
+
+                // 显示预览图
+                previewContainer.classList.add('show');
+                previewImg.src = photoDataUrl;
+
+                updateStatus('拍照成功，可点击“保存照片”下载到本地或“删除当前照片”清除预览', 'success');
+                savePhotoBtn.disabled = false; // 启用保存按钮
+                deletePhotoBtn.disabled = false; // 启用删除按钮
+
+            } catch (err) {
+                updateStatus(`拍照失败：${err.message}`, 'error');
+            }
+        }
+
+        /**
+         * 保存照片：触发浏览器下载
+         */
+        function savePhoto() {
+            if (!photoDataUrl) {
+                updateStatus('请先拍摄照片', 'error');
+                return;
+            }
+
+            try {
+                // 创建下载链接
+                const downloadLink = document.createElement('a');
+                // 设置文件名（带时间戳，避免重复）
+                const fileName = `camera_photo_${new Date().getTime()}.png`;
+                // 设置链接地址
+                downloadLink.href = photoDataUrl;
+                // 设置下载属性（指定文件名）
+                downloadLink.download = fileName;
+
+                // 触发点击下载
+                downloadLink.click();
+                // 移除临时链接
+                URL.revokeObjectURL(downloadLink.href);
+
+                updateStatus(`照片已触发下载，文件名为：${fileName}，可选择保存到桌面`, 'success');
+            } catch (err) {
+                updateStatus(`保存照片失败：${err.message}`, 'error');
+            }
+        }
+
+        /**
+         * 新增：删除当前照片功能
+         */
+        function deletePhoto() {
+            if (!photoDataUrl) {
+                updateStatus('暂无可删除的照片', 'error');
+                return;
+            }
+
+            try {
+                // 隐藏预览容器
+                previewContainer.classList.remove('show');
+                // 清空预览图
+                previewImg.src = '';
+                // 清空照片数据
+                photoDataUrl = null;
+                // 禁用保存和删除按钮
+                savePhotoBtn.disabled = true;
+                deletePhotoBtn.disabled = true;
+                // 更新状态提示
+                updateStatus('当前照片已删除，可重新拍摄新照片', 'info');
+
+            } catch (err) {
+                updateStatus(`删除照片失败：${err.message}`, 'error');
+            }
+        }
+
+        // 绑定按钮点击事件（新增删除按钮事件绑定）
+        requestCameraBtn.addEventListener('click', requestCameraPermission);
+        takePhotoBtn.addEventListener('click', takePhoto);
+        savePhotoBtn.addEventListener('click', savePhoto);
+        deletePhotoBtn.addEventListener('click', deletePhoto);
+
+        // 页面卸载时释放摄像头资源
+        window.addEventListener('beforeunload', () => {
+            if (mediaStream) {
+                // 停止所有媒体轨道
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+        });
+    </script>
+</body>
+</html>
